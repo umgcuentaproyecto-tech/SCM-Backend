@@ -21,7 +21,7 @@ import ordenesRouter from './routes/ordenes.js';
 import recepcionesRouter from './routes/recepciones.js';
 import comprasRouter from './routes/compras.js';
 import finanzasRouter from './routes/finanzas.js';
-import db from './db.js';
+import db, { getDatabaseConfig } from './db.js';
 
 dotenv.config();
 
@@ -193,9 +193,39 @@ async function ensureFinanceSchema() {
   }
 }
 
+const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+async function connectWithRetry({ maxAttempts = 10, delayMs = 2000 } = {}) {
+  const cfg = getDatabaseConfig ? getDatabaseConfig() : {};
+  console.log('Database host:', cfg.host || 'unknown', 'database:', cfg.database || 'unknown');
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      console.log(`Attempt ${attempt} to connect to database...`);
+      await db.query('SELECT 1');
+      console.log('Database connection established.');
+      return;
+    } catch (err) {
+      console.warn(`DB connect attempt ${attempt} failed: ${err && err.message}`);
+      if (attempt < maxAttempts) await sleep(delayMs);
+      else throw err;
+    }
+  }
+}
+
 (async () => {
-  await ensureFinanceSchema();
-  app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-  });
+  try {
+    await connectWithRetry({ maxAttempts: Number(process.env.DB_CONNECT_RETRIES || 10), delayMs: Number(process.env.DB_CONNECT_DELAY_MS || 2000) });
+    try {
+      await ensureFinanceSchema();
+    } catch (schemaErr) {
+      console.warn('Schema initialization warning:', schemaErr && schemaErr.message);
+    }
+    app.listen(PORT, () => {
+      console.log(`Server is running on port ${PORT}`);
+    });
+  } catch (err) {
+    console.error('Failed to connect to database after retries:', err && err.message);
+    process.exit(1);
+  }
 })();
