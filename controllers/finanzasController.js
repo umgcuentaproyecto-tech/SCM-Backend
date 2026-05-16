@@ -27,7 +27,7 @@ export const getCostos = async (req, res, next) => {
 
 export const createCosto = async (req, res, next) => {
   try {
-    const {
+    let {
       tipo_costo,
       descripcion,
       monto,
@@ -36,8 +36,15 @@ export const createCosto = async (req, res, next) => {
       id_inventario = null
     } = req.body;
 
+    const tiposPermitidos = ['DIRECTO', 'INDIRECTO', 'OPERATIVO', 'ADMINISTRATIVO'];
+    tipo_costo = String(tipo_costo || '').trim().toUpperCase();
+    descripcion = String(descripcion || '').trim();
+
     if (!tipo_costo || !descripcion) {
       return res.status(400).json({ error: 'Tipo y descripción son obligatorios' });
+    }
+    if (!tiposPermitidos.includes(tipo_costo)) {
+      return res.status(400).json({ error: 'Tipo de costo inválido. Usa DIRECTO, INDIRECTO, OPERATIVO o ADMINISTRATIVO.' });
     }
     if (!isPositiveNumber(monto)) {
       return res.status(400).json({ error: 'Monto debe ser un número mayor a 0' });
@@ -75,15 +82,23 @@ export const createCosto = async (req, res, next) => {
 export const updateCosto = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const {
+    let {
       tipo_costo,
       descripcion,
       monto,
       id_producto = null,
       id_inventario = null
     } = req.body;
+
+    const tiposPermitidos = ['DIRECTO', 'INDIRECTO', 'OPERATIVO', 'ADMINISTRATIVO'];
+    tipo_costo = String(tipo_costo || '').trim().toUpperCase();
+    descripcion = String(descripcion || '').trim();
+
     if (!tipo_costo || !descripcion) {
       return res.status(400).json({ error: 'Tipo y descripción son obligatorios' });
+    }
+    if (!tiposPermitidos.includes(tipo_costo)) {
+      return res.status(400).json({ error: 'Tipo de costo inválido. Usa DIRECTO, INDIRECTO, OPERATIVO o ADMINISTRATIVO.' });
     }
     if (!isPositiveNumber(monto)) {
       return res.status(400).json({ error: 'Monto debe ser un número mayor a 0' });
@@ -159,6 +174,16 @@ export const createPago = async (req, res, next) => {
       return res.status(400).json({ error: 'id_orden_compra debe ser un número entero válido' });
     }
 
+    if (id_orden_compra !== null && id_orden_compra !== '') {
+      const [paidOrders] = await db.query(
+        `SELECT id_pago FROM pagos_proveedores WHERE id_orden_compra = ? AND UPPER(estado) = 'PAGADO' LIMIT 1`,
+        [id_orden_compra]
+      );
+      if (paidOrders.length > 0) {
+        return res.status(400).json({ error: 'Esta orden de compra ya tiene un pago registrado como PAGADO' });
+      }
+    }
+
     const [result] = await db.query(
       `INSERT INTO pagos_proveedores
        (id_proveedor, id_orden_compra, monto_pagado, metodo_pago, estado)
@@ -181,6 +206,11 @@ export const updatePago = async (req, res, next) => {
     }
     if (!isPositiveNumber(monto_pagado)) {
       return res.status(400).json({ error: 'Monto pagado debe ser un número mayor a 0' });
+    }
+
+    const [existingRows] = await db.query('SELECT estado FROM pagos_proveedores WHERE id_pago = ?', [id]);
+    if (existingRows.length > 0 && String(existingRows[0].estado || '').toUpperCase() === 'PAGADO') {
+      return res.status(400).json({ error: 'No se puede editar un pago que ya está marcado como PAGADO' });
     }
 
     await db.query(
