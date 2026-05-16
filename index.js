@@ -185,7 +185,29 @@ async function ensureFinanceSchema() {
     }
   };
 
+  const ensureColumnType = async (table, column, definition) => {
+    const [rows] = await db.query(
+      `SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, COLUMN_TYPE
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = ?
+         AND COLUMN_NAME = ?`,
+      [table, column]
+    );
+
+    if (rows.length === 0) {
+      await db.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      return;
+    }
+
+    const currentType = rows[0].COLUMN_TYPE;
+    if (!currentType || !currentType.toUpperCase().includes('VARCHAR(50)')) {
+      await db.query(`ALTER TABLE ${table} MODIFY COLUMN ${column} ${definition}`);
+    }
+  };
+
   try {
+    await ensureColumnType('costos_operativos', 'tipo_costo', 'VARCHAR(50) NOT NULL');
     await ensureColumn('costos_operativos', 'id_producto', 'INT NULL');
     await ensureColumn('costos_operativos', 'id_inventario', 'INT NULL');
   } catch (error) {
