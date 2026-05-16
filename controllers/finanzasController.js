@@ -250,6 +250,18 @@ export const getResumen = async (req, res, next) => {
     `);
     const [[ordenes]] = await db.query('SELECT COALESCE(SUM(total), 0) AS total_ordenes FROM ordenes_compra');
 
+    // Totales por tipo de costo
+    const [totalesPorTipo] = await db.query(`
+      SELECT UPPER(tipo_costo) AS tipo_costo, COALESCE(SUM(monto), 0) AS total
+      FROM costos_operativos
+      GROUP BY UPPER(tipo_costo)
+    `);
+
+    const totalsMap = {};
+    totalesPorTipo.forEach(r => {
+      totalsMap[String(r.tipo_costo || '').toUpperCase()] = Number(r.total || 0);
+    });
+
     res.json({
       total_costos: costos.total_costos,
       total_pagos: pagos.total_pagos,
@@ -258,7 +270,11 @@ export const getResumen = async (req, res, next) => {
       valor_inventario_venta: inventario.valor_inventario_venta,
       margen_potencial: inventario.margen_potencial,
       unidades_stock: inventario.unidades_stock,
-      saldo_financiero: Number(inventario.valor_inventario_venta || 0) - Number(costos.total_costos || 0) - Number(pagos.total_pagos || 0)
+      saldo_financiero: Number(inventario.valor_inventario_venta || 0) - Number(costos.total_costos || 0) - Number(pagos.total_pagos || 0),
+      total_costos_directo: totalsMap['DIRECTO'] || 0,
+      total_costos_indirecto: totalsMap['INDIRECTO'] || 0,
+      total_costos_operativo: totalsMap['OPERATIVO'] || 0,
+      total_costos_administrativo: totalsMap['ADMINISTRATIVO'] || 0
     });
   } catch (error) {
     next(error);
